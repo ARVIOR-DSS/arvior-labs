@@ -14,6 +14,49 @@ from utils.request_builder import (
 )
 from utils.scenarios import SCENARIOS
 
+def available_cols(df: pd.DataFrame, cols: list[str]) -> list[str]:
+    """Return only columns that exist in the dataframe."""
+    return [col for col in cols if col in df.columns]
+
+
+def plot_line(df: pd.DataFrame, y_cols: list[str], title: str, y_label: str):
+    cols = available_cols(df, y_cols)
+
+    if not cols:
+        return
+
+    fig = px.line(
+        df,
+        x="DAS",
+        y=cols,
+        labels={
+            "DAS": "Days after sowing",
+            "value": y_label,
+            "variable": "Variable",
+        },
+        title=title,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def plot_bar(df: pd.DataFrame, y_cols: list[str], title: str, y_label: str):
+    cols = available_cols(df, y_cols)
+
+    if not cols:
+        return
+
+    fig = px.bar(
+        df,
+        x="DAS",
+        y=cols,
+        labels={
+            "DAS": "Days after sowing",
+            "value": y_label,
+            "variable": "Variable",
+        },
+        title=title,
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 st.set_page_config(
     page_title="ARVIOR Education Demo",
@@ -393,13 +436,15 @@ with tab_results:
             # -----------------------------
             final_row = season_df.iloc[-1]
 
-            col1, col2, col3, col4 = st.columns(4)
+            st.markdown("## Summary")
+
+            col1, col2, col3, col4, col5 = st.columns(5)
 
             with col1:
                 if "Biomass_actual_cum" in season_df.columns:
                     st.metric(
                         "Final biomass",
-                        f"{float(final_row['Biomass_actual_cum']):.2f}",
+                        f"{float(final_row['Biomass_actual_cum']):.2f} t DM/ha",
                     )
 
             with col2:
@@ -410,117 +455,208 @@ with tab_results:
                     )
 
             with col3:
+                if "Yield_fresh" in season_df.columns:
+                    st.metric(
+                        "Fresh yield",
+                        f"{float(final_row['Yield_fresh']):.2f}",
+                    )
+
+            with col4:
                 if "N_cum_actual" in season_df.columns:
                     st.metric(
                         "N uptake",
                         f"{float(final_row['N_cum_actual']):.1f} kg N/ha",
                     )
 
-            with col4:
+            with col5:
                 total_irrigation = sum(e["mm"] for e in irrigation_events)
                 st.metric(
                     "Total irrigation",
                     f"{total_irrigation:.0f} mm",
                 )
 
-            # -----------------------------
-            # Plot: biomass
-            # -----------------------------
-            biomass_cols = [
-                col for col in ["Biomass_actual_cum", "Biomass_pot_cum"]
-                if col in season_df.columns
-            ]
+            col6, col7, col8, col9, col10 = st.columns(5)
 
-            if biomass_cols:
-                fig = px.line(
-                    season_df,
-                    x="DAS",
-                    y=biomass_cols,
-                    labels={
-                        "DAS": "Days after sowing",
-                        "value": "Biomass",
-                        "variable": "Variable",
-                    },
-                    title="Biomass development from sowing to harvest",
-                )
-                st.plotly_chart(fig, use_container_width=True)
+            with col6:
+                if "NO3_leached" in season_df.columns:
+                    st.metric(
+                        "Total NO₃ leached",
+                        f"{float(season_df['NO3_leached'].sum()):.1f} kg N/ha",
+                    )
 
-            # -----------------------------
-            # Plot: N uptake
-            # -----------------------------
-            n_cols = [
-                col for col in ["N_cum_actual", "N_cum_potential"]
-                if col in season_df.columns
-            ]
+            with col7:
+                if "N_denitrified" in season_df.columns:
+                    st.metric(
+                        "Denitrified N",
+                        f"{float(season_df['N_denitrified'].sum()):.1f} kg N/ha",
+                    )
 
-            if n_cols:
-                fig_n = px.line(
-                    season_df,
-                    x="DAS",
-                    y=n_cols,
-                    labels={
-                        "DAS": "Days after sowing",
-                        "value": "N uptake (kg N/ha)",
-                        "variable": "Variable",
-                    },
-                    title="Cumulative nitrogen uptake",
-                )
-                st.plotly_chart(fig_n, use_container_width=True)
+            with col8:
+                if "NH3_volatilized" in season_df.columns:
+                    st.metric(
+                        "NH₃ volatilized",
+                        f"{float(season_df['NH3_volatilized'].sum()):.1f} kg N/ha",
+                    )
+
+            with col9:
+                if "ks" in season_df.columns:
+                    water_stress_days = int((season_df["ks"] < 0.99).sum())
+                    st.metric(
+                        "Water-stress days",
+                        f"{water_stress_days}",
+                    )
+
+            with col10:
+                if "N_stress_factor" in season_df.columns:
+                    n_stress_days = int((season_df["N_stress_factor"] < 0.99).sum())
+                    st.metric(
+                        "N-stress days",
+                        f"{n_stress_days}",
+                    )
 
             # -----------------------------
-            # Plot: water and N stress
+            # Results plots
             # -----------------------------
-            stress_cols = [
-                col for col in ["ks", "N_stress_factor", "f_salinity"]
-                if col in season_df.columns
-            ]
+            st.markdown("## Model outputs")
 
-            if stress_cols:
-                fig_stress = px.line(
-                    season_df,
-                    x="DAS",
-                    y=stress_cols,
-                    labels={
-                        "DAS": "Days after sowing",
-                        "value": "Stress factor (1 = no stress)",
-                        "variable": "Variable",
-                    },
-                    title="Water, nitrogen and salinity stress factors",
-                )
-                st.plotly_chart(fig_stress, use_container_width=True)
-
-            # -----------------------------
-            # Plot: rain and irrigation
-            # -----------------------------
-            water_input_cols = [
-                col for col in ["P", "Irrigation"]
-                if col in season_df.columns
-            ]
-
-            if water_input_cols:
-                fig_water = px.bar(
-                    season_df,
-                    x="DAS",
-                    y=water_input_cols,
-                    labels={
-                        "DAS": "Days after sowing",
-                        "value": "Water input (mm/day)",
-                        "variable": "Variable",
-                    },
-                    title="Rainfall and irrigation",
-                )
-                st.plotly_chart(fig_water, use_container_width=True)
-
-            with st.expander("Available output columns"):
-                st.write(list(season_df.columns))
-
-            csv = season_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download season output CSV",
-                data=csv,
-                file_name=f"{scenario_config['crop_id']}_{treatment_key}_season_output.csv",
-                mime="text/csv",
+            results_tab1, results_tab2, results_tab3, results_tab4 = st.tabs(
+                [
+                    "Growth and yield",
+                    "Nitrogen",
+                    "Water balance",
+                    "Stress and DSS",
+                ]
             )
+
+            with results_tab1:
+                plot_line(
+                    season_df,
+                    ["Biomass_actual_cum", "Biomass_pot_cum"],
+                    "Biomass development",
+                    "Biomass (t DM/ha)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["dBiomass_actual", "dBiomass_pot"],
+                    "Daily biomass growth",
+                    "Daily biomass growth (t DM/ha/day)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["Yield_dm", "Yield_dm_pot"],
+                    "Dry matter yield",
+                    "Yield DM",
+                )
+
+                plot_line(
+                    season_df,
+                    ["Yield_fresh", "Yield_fresh_pot"],
+                    "Fresh yield",
+                    "Fresh yield",
+                )
+
+            with results_tab2:
+                plot_line(
+                    season_df,
+                    ["N_cum_actual"],
+                    "Cumulative nitrogen uptake",
+                    "N uptake (kg N/ha)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["N_actual_daily", "N_potential_daily"],
+                    "Daily nitrogen uptake",
+                    "Daily N uptake/demand (kg N/ha/day)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["NO3_pool", "NH4_pool"],
+                    "Mineral nitrogen pools",
+                    "Mineral N pool (kg N/ha)",
+                )
+
+                plot_bar(
+                    season_df,
+                    ["N_fert_added_today"],
+                    "Fertilizer N additions",
+                    "N added (kg N/ha/day)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["NO3_leached", "N_denitrified", "NH3_volatilized"],
+                    "Daily nitrogen losses",
+                    "N loss (kg N/ha/day)",
+                )
+
+            with results_tab3:
+                plot_line(
+                    season_df,
+                    ["VWC"],
+                    "Volumetric water content",
+                    "VWC (%)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["wb_D_end_mm", "RAW", "TAW"],
+                    "Root-zone depletion, RAW and TAW",
+                    "Water depth (mm)",
+                )
+
+                plot_bar(
+                    season_df,
+                    ["P", "Irrigation"],
+                    "Rainfall and irrigation",
+                    "Water input (mm/day)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["ET0", "ETa"],
+                    "Reference and actual evapotranspiration",
+                    "ET (mm/day)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["DP", "Runoff"],
+                    "Drainage and runoff",
+                    "Water loss (mm/day)",
+                )
+
+            with results_tab4:
+                plot_line(
+                    season_df,
+                    ["ks", "N_stress_factor", "f_salinity"],
+                    "Stress factors",
+                    "Stress factor (1 = no stress)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["Irrig_rec_mm"],
+                    "DSS irrigation recommendation",
+                    "Recommended irrigation (mm)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["Fert_rec_kgN_ha"],
+                    "DSS fertilizer recommendation",
+                    "Recommended N (kg N/ha)",
+                )
+
+                plot_line(
+                    season_df,
+                    ["Leach_risk_index", "Drive_risk_index"],
+                    "Operational risk indices",
+                    "Risk index",
+                )
 
         except Exception as exc:
             st.error("The ARVIOR scenario run failed.")
