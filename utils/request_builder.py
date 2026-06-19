@@ -84,8 +84,12 @@ def build_run_request(
     fertilizer_events: list[dict],
     irrigation_events: list[dict],
     prev_state: dict | None = None,
+    site_overrides: dict | None = None,
 ) -> dict:
     site = load_site_for_api(con, site_id=site_id, crop_id=crop_id)
+
+    if site_overrides:
+        site.update(site_overrides)
 
     weather = load_weather_for_api(
         con,

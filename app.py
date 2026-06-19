@@ -103,29 +103,67 @@ tab_site, tab_management, tab_advanced, tab_results, tab_debug = st.tabs(
 with tab_site:
     st.subheader("Site properties")
 
-    st.info(
-        "For this first version, the site properties are loaded from the validation database. "
-        "In the next step we will make these values editable."
+    st.caption(
+        "These values are loaded from the validation database, but can be changed "
+        "for educational scenario exploration."
     )
+
+    current_soil_id = str(site_display.get("soil_id", "Loamy"))
+
+    soil_options = ["Sand", "Loamy", "Clay"]
+    if current_soil_id not in soil_options:
+        soil_options.insert(0, current_soil_id)
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Site", str(site_display.get("name", "")))
-        st.metric("Soil type", str(site_display.get("soil_id", "")))
+        st.markdown("### Location")
+        st.write(str(site_display.get("name", "")))
+
+        soil_id = st.selectbox(
+            "Soil type",
+            soil_options,
+            index=soil_options.index(current_soil_id),
+        )
+
+        sample_depth_cm = st.number_input(
+            "Sample depth (cm)",
+            value=float(site_display.get("sample_depth_cm")),
+            min_value=1.0,
+            max_value=100.0,
+            step=1.0,
+        )
 
     with col2:
-        st.metric("Organic matter (%)", f"{float(site_display.get('OM_percent')):.2f}")
-        st.metric("C/N ratio", f"{float(site_display.get('CN_ratio')):.1f}")
+        st.markdown("### Soil chemistry")
+
+        om_percent = st.number_input(
+            "Organic matter (%)",
+            value=float(site_display.get("OM_percent")),
+            min_value=0.0,
+            max_value=30.0,
+            step=0.1,
+        )
+
+        ph = st.number_input(
+            "pH",
+            value=float(site_display.get("pH")),
+            min_value=3.0,
+            max_value=10.0,
+            step=0.1,
+        )
 
     with col3:
-        st.metric("pH", f"{float(site_display.get('pH')):.1f}")
-        st.metric("Sample depth (cm)", f"{float(site_display.get('sample_depth_cm')):.0f}")
+        st.markdown("### Nitrogen initialisation")
 
-    st.markdown("### Initial mineral N")
-    col4, col5 = st.columns(2)
+        cn_ratio = st.number_input(
+            "C/N ratio",
+            value=float(site_display.get("CN_ratio")),
+            min_value=1.0,
+            max_value=50.0,
+            step=0.5,
+        )
 
-    with col4:
         initial_n = st.number_input(
             "Initial mineral N at sowing (kg N/ha)",
             value=float(scenario_config["initial_mineral_n_kg_ha"]),
@@ -133,7 +171,6 @@ with tab_site:
             step=5.0,
         )
 
-    with col5:
         initial_no3_fraction = st.number_input(
             "NO₃ fraction of initial mineral N",
             value=float(scenario_config["initial_no3_fraction"]),
@@ -141,6 +178,17 @@ with tab_site:
             max_value=1.0,
             step=0.05,
         )
+
+    site_overrides = {
+        "soil_id": soil_id,
+        "OM_percent": float(om_percent),
+        "CN_ratio": float(cn_ratio),
+        "pH": float(ph),
+        "sample_depth_cm": float(sample_depth_cm),
+    }
+
+    with st.expander("Site values sent to the API"):
+        st.json(site_overrides)
 
 
 with tab_management:
@@ -291,6 +339,7 @@ with tab_results:
                 fertilizer_events=fertilizer_events,
                 irrigation_events=irrigation_events,
                 prev_state=None,
+                site_overrides=site_overrides,
             )
 
             warmup_response = run_arvior(warmup_request)
@@ -319,6 +368,7 @@ with tab_results:
                 fertilizer_events=fertilizer_events,
                 irrigation_events=irrigation_events,
                 prev_state=season_prev_state,
+                site_overrides=site_overrides,
             )
 
             season_response = run_arvior(season_request)
@@ -487,6 +537,8 @@ with tab_debug:
     st.write("Selected treatment:", treatment_key)
     st.write("Scenario config:", scenario_config)
     st.write("Treatment config:", treatment_config)
+    st.markdown("### Site overrides")
+    st.json(site_overrides)
 
     st.markdown("### Edited fertilizer table")
     st.dataframe(edited_fertilizer_df, use_container_width=True)
