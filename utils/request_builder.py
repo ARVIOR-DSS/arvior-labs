@@ -115,29 +115,51 @@ def build_run_request(
     }
 
 
-def build_potato_inputs(con, scenario: dict, treatment_key: str) -> dict:
+def build_scenario_inputs(con, scenario: dict, treatment_key: str) -> dict:
     treatment = scenario["treatments"][treatment_key]
     trial = load_trial(con, treatment["trial_id"])
 
-    sowing_date = pd.to_datetime(trial["sowing_date"]).date()
-    harvest_date = pd.to_datetime(trial["harvest_date"]).date()
+    crop_id = scenario["crop_id"]
 
-    warmup_start = sowing_date - timedelta(days=int(scenario["warmup_days"]))
-    warmup_end = sowing_date - timedelta(days=1)
+    raw_sowing_date = trial.get("sowing_date")
+    raw_harvest_date = trial.get("harvest_date")
+
+    harvest_date = pd.to_datetime(raw_harvest_date).date()
+
+    # Production grassland is treated as perennial-like:
+    # effective start is Jan 1 of the trial/harvest year.
+    if scenario.get("effective_start_mode") == "jan1_of_harvest_year":
+        sowing_date = pd.Timestamp(
+            year=harvest_date.year,
+            month=1,
+            day=1,
+        ).date()
+    else:
+        sowing_date = pd.to_datetime(raw_sowing_date).date()
+
+    warmup_days = int(scenario.get("warmup_days", 0) or 0)
+
+    if warmup_days > 0:
+        warmup_start = sowing_date - timedelta(days=warmup_days)
+        warmup_end = sowing_date - timedelta(days=1)
+    else:
+        warmup_start = None
+        warmup_end = None
 
     fertilizer_events = load_fertilizer_events_for_api(
         con,
         treatment["trial_id"],
     )
 
-    irrigation_events = treatment["default_irrigation"]
+    irrigation_events = treatment.get("default_irrigation", [])
 
     return {
         "trial": trial,
+        "crop_id": crop_id,
         "sowing_date": sowing_date.isoformat(),
         "harvest_date": harvest_date.isoformat(),
-        "warmup_start": warmup_start.isoformat(),
-        "warmup_end": warmup_end.isoformat(),
+        "warmup_start": warmup_start.isoformat() if warmup_start else None,
+        "warmup_end": warmup_end.isoformat() if warmup_end else None,
         "fertilizer_events": fertilizer_events,
         "irrigation_events": irrigation_events,
     }

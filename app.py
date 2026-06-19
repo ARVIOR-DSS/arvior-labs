@@ -8,15 +8,24 @@ from utils.api_client import check_api_health, run_arvior
 from utils.db_loader import connect, load_site_display
 from utils.request_builder import (
     add_days_after_sowing,
-    build_potato_inputs,
+    build_scenario_inputs,
     build_run_request,
     inject_initial_mineral_n,
 )
 from utils.scenarios import SCENARIOS
 
 def available_cols(df: pd.DataFrame, cols: list[str]) -> list[str]:
-    """Return only columns that exist in the dataframe."""
-    return [col for col in cols if col in df.columns]
+    """Return only columns that exist and contain at least one non-empty value."""
+    available = []
+
+    for col in cols:
+        if col not in df.columns:
+            continue
+
+        if df[col].notna().any():
+            available.append(col)
+
+    return available
 
 
 def plot_line(df: pd.DataFrame, y_cols: list[str], title: str, y_label: str):
@@ -58,6 +67,26 @@ def plot_bar(df: pd.DataFrame, y_cols: list[str], title: str, y_label: str):
     )
     st.plotly_chart(fig, use_container_width=True)
 
+def safe_float(value):
+    """Convert value to float if possible, otherwise return None."""
+    if value is None or pd.isna(value):
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def show_metric(label: str, value, suffix: str = "", decimals: int = 2):
+    """Show a Streamlit metric, safely handling None/non-numeric values."""
+    numeric_value = safe_float(value)
+
+    if numeric_value is None:
+        st.metric(label, "—")
+    else:
+        st.metric(label, f"{numeric_value:.{decimals}f}{suffix}")
+
 def render_model_results(
     season_df: pd.DataFrame,
     irrigation_events: list[dict],
@@ -74,30 +103,36 @@ def render_model_results(
 
     with col1:
         if "Biomass_actual_cum" in season_df.columns:
-            st.metric(
+            show_metric(
                 "Final biomass",
-                f"{float(final_row['Biomass_actual_cum']):.2f} t DM/ha",
+                final_row["Biomass_actual_cum"],
+                suffix=" t DM/ha",
+                decimals=2,
             )
 
     with col2:
         if "Yield_dm" in season_df.columns:
-            st.metric(
+            show_metric(
                 "Yield DM",
-                f"{float(final_row['Yield_dm']):.2f}",
+                final_row["Yield_dm"],
+                decimals=2,
             )
 
     with col3:
         if "Yield_fresh" in season_df.columns:
-            st.metric(
+            show_metric(
                 "Fresh yield",
-                f"{float(final_row['Yield_fresh']):.2f}",
+                final_row["Yield_fresh"],
+                decimals=2,
             )
 
     with col4:
         if "N_cum_actual" in season_df.columns:
-            st.metric(
+            show_metric(
                 "N uptake",
-                f"{float(final_row['N_cum_actual']):.1f} kg N/ha",
+                final_row["N_cum_actual"],
+                suffix=" kg N/ha",
+                decimals=1,
             )
 
     with col5:
@@ -381,7 +416,7 @@ if st.sidebar.button("Check API connection"):
 # -----------------------------
 con = connect()
 
-potato_inputs = build_potato_inputs(
+scenario_inputs = build_scenario_inputs(
     con=con,
     scenario=scenario_config,
     treatment_key=treatment_key,
@@ -513,20 +548,20 @@ with tab_management:
     with col1:
         sowing_date = st.date_input(
             "Sowing / start date",
-            value=pd.to_datetime(potato_inputs["sowing_date"]).date(),
+            value=pd.to_datetime(scenario_inputs["sowing_date"]).date(),
             key=f"sowing_date_{widget_key}",
         )
 
     with col2:
         harvest_date = st.date_input(
             "Harvest / end date",
-            value=pd.to_datetime(potato_inputs["harvest_date"]).date(),
+            value=pd.to_datetime(scenario_inputs["harvest_date"]).date(),
             key=f"harvest_date_{widget_key}",
         )
 
     st.markdown("### Fertilizer events")
 
-    fertilizer_df = pd.DataFrame(potato_inputs["fertilizer_events"])
+    fertilizer_df = pd.DataFrame(scenario_inputs["fertilizer_events"])
 
     if fertilizer_df.empty:
         fertilizer_df = pd.DataFrame(
@@ -547,7 +582,7 @@ with tab_management:
         "For the education demo they are fixed editable events."
     )
 
-    irrigation_df = pd.DataFrame(potato_inputs["irrigation_events"])
+    irrigation_df = pd.DataFrame(scenario_inputs["irrigation_events"])
 
     if irrigation_df.empty:
         irrigation_df = pd.DataFrame(columns=["date", "mm"])
@@ -597,24 +632,20 @@ with tab_results:
     st.subheader("Results")
 
     if run_button:
-        st.info(
-            "Running ARVIOR with validation-style warm-up: "
-            "30 days before sowing → inject initial mineral N → sowing-to-harvest run."
-        )
+        if scenario_config.get("run_mode") == "warmup_then_season":
+            st.info(
+                "Running ARVIOR with validation-style warm-up: "
+                "30 days before sowing → inject initial mineral N → sowing-to-harvest run."
+            )
+        else:
+            st.info(
+                "Running ARVIOR as a season-only perennial-style scenario: "
+                "inject initial mineral N at effective start date → run to harvest/end."
+            )
 
         try:
             sowing_date_str = sowing_date.isoformat()
             harvest_date_str = harvest_date.isoformat()
-
-            warmup_start = (
-                pd.to_datetime(sowing_date_str)
-                - pd.Timedelta(days=int(scenario_config["warmup_days"]))
-            ).date().isoformat()
-
-            warmup_end = (
-                pd.to_datetime(sowing_date_str)
-                - pd.Timedelta(days=1)
-            ).date().isoformat()
 
             fertilizer_events_raw = edited_fertilizer_df.to_dict(orient="records")
             irrigation_events_raw = edited_irrigation_df.to_dict(orient="records")
@@ -641,25 +672,45 @@ with tab_results:
                 and pd.notna(e.get("mm"))
             ]
 
-            # -----------------------------
-            # API call 1: warm-up
-            # -----------------------------
-            warmup_request = build_run_request(
-                con=con,
-                site_id=scenario_config["site_id"],
-                crop_id=scenario_config["crop_id"],
-                sowing_date=sowing_date_str,
-                harvest_date=harvest_date_str,
-                window_start=warmup_start,
-                window_end=warmup_end,
-                fertilizer_events=fertilizer_events,
-                irrigation_events=irrigation_events,
-                prev_state=None,
-                site_overrides=site_overrides,
-            )
+            run_mode = scenario_config.get("run_mode", "warmup_then_season")
 
-            warmup_response = run_arvior(warmup_request)
-            warmup_state = warmup_response["next_state"]
+            warmup_request = None
+            warmup_response = None
+
+            if run_mode == "warmup_then_season":
+                warmup_start = (
+                    pd.to_datetime(sowing_date_str)
+                    - pd.Timedelta(days=int(scenario_config["warmup_days"]))
+                ).date().isoformat()
+
+                warmup_end = (
+                    pd.to_datetime(sowing_date_str)
+                    - pd.Timedelta(days=1)
+                ).date().isoformat()
+
+                # -----------------------------
+                # API call 1: warm-up
+                # -----------------------------
+                warmup_request = build_run_request(
+                    con=con,
+                    site_id=scenario_config["site_id"],
+                    crop_id=scenario_config["crop_id"],
+                    sowing_date=sowing_date_str,
+                    harvest_date=harvest_date_str,
+                    window_start=warmup_start,
+                    window_end=warmup_end,
+                    fertilizer_events=fertilizer_events,
+                    irrigation_events=irrigation_events,
+                    prev_state=None,
+                    site_overrides=site_overrides,
+                )
+
+                warmup_response = run_arvior(warmup_request)
+                warmup_state = warmup_response["next_state"]
+
+            else:
+                # Grassland-like scenarios start directly at the effective season start.
+                warmup_state = None
 
             # -----------------------------
             # Inject initial N at sowing
