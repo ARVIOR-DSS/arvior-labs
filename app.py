@@ -58,6 +58,246 @@ def plot_bar(df: pd.DataFrame, y_cols: list[str], title: str, y_label: str):
     )
     st.plotly_chart(fig, use_container_width=True)
 
+def render_model_results(
+    season_df: pd.DataFrame,
+    irrigation_events: list[dict],
+    crop_id: str,
+    treatment_key: str,
+):
+    """Render summary metrics, graphs and CSV download for the latest model run."""
+
+    st.markdown("## Summary")
+
+    final_row = season_df.iloc[-1]
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
+        if "Biomass_actual_cum" in season_df.columns:
+            st.metric(
+                "Final biomass",
+                f"{float(final_row['Biomass_actual_cum']):.2f} t DM/ha",
+            )
+
+    with col2:
+        if "Yield_dm" in season_df.columns:
+            st.metric(
+                "Yield DM",
+                f"{float(final_row['Yield_dm']):.2f}",
+            )
+
+    with col3:
+        if "Yield_fresh" in season_df.columns:
+            st.metric(
+                "Fresh yield",
+                f"{float(final_row['Yield_fresh']):.2f}",
+            )
+
+    with col4:
+        if "N_cum_actual" in season_df.columns:
+            st.metric(
+                "N uptake",
+                f"{float(final_row['N_cum_actual']):.1f} kg N/ha",
+            )
+
+    with col5:
+        total_irrigation = sum(float(e["mm"]) for e in irrigation_events)
+        st.metric(
+            "Total irrigation",
+            f"{total_irrigation:.0f} mm",
+        )
+
+    col6, col7, col8, col9, col10 = st.columns(5)
+
+    with col6:
+        if "NO3_leached" in season_df.columns:
+            st.metric(
+                "Total NO₃ leached",
+                f"{float(season_df['NO3_leached'].sum()):.1f} kg N/ha",
+            )
+
+    with col7:
+        if "N_denitrified" in season_df.columns:
+            st.metric(
+                "Denitrified N",
+                f"{float(season_df['N_denitrified'].sum()):.1f} kg N/ha",
+            )
+
+    with col8:
+        if "NH3_volatilized" in season_df.columns:
+            st.metric(
+                "NH₃ volatilized",
+                f"{float(season_df['NH3_volatilized'].sum()):.1f} kg N/ha",
+            )
+
+    with col9:
+        if "ks" in season_df.columns:
+            water_stress_days = int((season_df["ks"] < 0.99).sum())
+            st.metric(
+                "Water-stress days",
+                f"{water_stress_days}",
+            )
+
+    with col10:
+        if "N_stress_factor" in season_df.columns:
+            n_stress_days = int((season_df["N_stress_factor"] < 0.99).sum())
+            st.metric(
+                "N-stress days",
+                f"{n_stress_days}",
+            )
+
+    st.markdown("## Model outputs")
+
+    results_tab1, results_tab2, results_tab3, results_tab4 = st.tabs(
+        [
+            "Growth and yield",
+            "Nitrogen",
+            "Water balance",
+            "Stress and DSS",
+        ]
+    )
+
+    with results_tab1:
+        plot_line(
+            season_df,
+            ["Biomass_actual_cum", "Biomass_pot_cum"],
+            "Biomass development",
+            "Biomass (t DM/ha)",
+        )
+
+        plot_line(
+            season_df,
+            ["dBiomass_actual", "dBiomass_pot"],
+            "Daily biomass growth",
+            "Daily biomass growth (t DM/ha/day)",
+        )
+
+        plot_line(
+            season_df,
+            ["Yield_dm", "Yield_dm_pot"],
+            "Dry matter yield",
+            "Yield DM",
+        )
+
+        plot_line(
+            season_df,
+            ["Yield_fresh", "Yield_fresh_pot"],
+            "Fresh yield",
+            "Fresh yield",
+        )
+
+    with results_tab2:
+        plot_line(
+            season_df,
+            ["N_cum_actual"],
+            "Cumulative nitrogen uptake",
+            "N uptake (kg N/ha)",
+        )
+
+        plot_line(
+            season_df,
+            ["N_actual_daily", "N_potential_daily"],
+            "Daily nitrogen uptake",
+            "Daily N uptake/demand (kg N/ha/day)",
+        )
+
+        plot_line(
+            season_df,
+            ["NO3_pool", "NH4_pool"],
+            "Mineral nitrogen pools",
+            "Mineral N pool (kg N/ha)",
+        )
+
+        plot_bar(
+            season_df,
+            ["N_fert_added_today"],
+            "Fertilizer N additions",
+            "N added (kg N/ha/day)",
+        )
+
+        plot_line(
+            season_df,
+            ["NO3_leached", "N_denitrified", "NH3_volatilized"],
+            "Daily nitrogen losses",
+            "N loss (kg N/ha/day)",
+        )
+
+    with results_tab3:
+        plot_line(
+            season_df,
+            ["VWC"],
+            "Volumetric water content",
+            "VWC (%)",
+        )
+
+        plot_line(
+            season_df,
+            ["wb_D_end_mm", "RAW", "TAW"],
+            "Root-zone depletion, RAW and TAW",
+            "Water depth (mm)",
+        )
+
+        plot_bar(
+            season_df,
+            ["P", "Irrigation"],
+            "Rainfall and irrigation",
+            "Water input (mm/day)",
+        )
+
+        plot_line(
+            season_df,
+            ["ET0", "ETa"],
+            "Reference and actual evapotranspiration",
+            "ET (mm/day)",
+        )
+
+        plot_line(
+            season_df,
+            ["DP", "Runoff"],
+            "Drainage and runoff",
+            "Water loss (mm/day)",
+        )
+
+    with results_tab4:
+        plot_line(
+            season_df,
+            ["ks", "N_stress_factor", "f_salinity"],
+            "Stress factors",
+            "Stress factor (1 = no stress)",
+        )
+
+        plot_line(
+            season_df,
+            ["Irrig_rec_mm"],
+            "DSS irrigation recommendation",
+            "Recommended irrigation (mm)",
+        )
+
+        plot_line(
+            season_df,
+            ["Fert_rec_kgN_ha"],
+            "DSS fertilizer recommendation",
+            "Recommended N (kg N/ha)",
+        )
+
+        plot_line(
+            season_df,
+            ["Leach_risk_index", "Drive_risk_index"],
+            "Operational risk indices",
+            "Risk index",
+        )
+
+    with st.expander("Available output columns"):
+        st.write(list(season_df.columns))
+
+    csv = season_df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "Download season output CSV",
+        data=csv,
+        file_name=f"{crop_id}_{treatment_key}_season_output.csv",
+        mime="text/csv",
+    )
+
 st.set_page_config(
     page_title="ARVIOR Education Demo",
     page_icon="🌱",
@@ -100,6 +340,30 @@ treatment_key = st.sidebar.selectbox(
 treatment_config = scenario_config["treatments"][treatment_key]
 
 run_button = st.sidebar.button("Run ARVIOR", type="primary")
+
+if "reset_counter" not in st.session_state:
+    st.session_state["reset_counter"] = 0
+
+selection_id = f"{scenario_name}_{treatment_key}"
+previous_selection_id = st.session_state.get("selection_id")
+
+if previous_selection_id != selection_id:
+    st.session_state["selection_id"] = selection_id
+    st.session_state["reset_counter"] += 1
+
+reset_button = st.sidebar.button("Reset scenario defaults")
+
+if reset_button:
+    st.session_state["reset_counter"] += 1
+
+    # Clear previous model results.
+    for key in list(st.session_state.keys()):
+        if key.startswith("last_"):
+            del st.session_state[key]
+
+    st.rerun()
+
+widget_key = f"{selection_id}_{st.session_state['reset_counter']}"
 
 st.sidebar.markdown("---")
 
@@ -167,6 +431,7 @@ with tab_site:
             "Soil type",
             soil_options,
             index=soil_options.index(current_soil_id),
+            key=f"soil_id_{widget_key}",
         )
 
         sample_depth_cm = st.number_input(
@@ -175,6 +440,7 @@ with tab_site:
             min_value=1.0,
             max_value=100.0,
             step=1.0,
+            key=f"sample_depth_{widget_key}",
         )
 
     with col2:
@@ -186,6 +452,7 @@ with tab_site:
             min_value=0.0,
             max_value=30.0,
             step=0.1,
+            key=f"om_{widget_key}",
         )
 
         ph = st.number_input(
@@ -194,6 +461,7 @@ with tab_site:
             min_value=3.0,
             max_value=10.0,
             step=0.1,
+            key=f"ph_{widget_key}",
         )
 
     with col3:
@@ -205,6 +473,7 @@ with tab_site:
             min_value=1.0,
             max_value=50.0,
             step=0.5,
+            key=f"cn_{widget_key}",
         )
 
         initial_n = st.number_input(
@@ -212,6 +481,7 @@ with tab_site:
             value=float(scenario_config["initial_mineral_n_kg_ha"]),
             min_value=0.0,
             step=5.0,
+            key=f"initial_n_{widget_key}",
         )
 
         initial_no3_fraction = st.number_input(
@@ -220,6 +490,7 @@ with tab_site:
             min_value=0.0,
             max_value=1.0,
             step=0.05,
+            key=f"initial_no3_fraction_{widget_key}",
         )
 
     site_overrides = {
@@ -243,12 +514,14 @@ with tab_management:
         sowing_date = st.date_input(
             "Sowing / start date",
             value=pd.to_datetime(potato_inputs["sowing_date"]).date(),
+            key=f"sowing_date_{widget_key}",
         )
 
     with col2:
         harvest_date = st.date_input(
             "Harvest / end date",
             value=pd.to_datetime(potato_inputs["harvest_date"]).date(),
+            key=f"harvest_date_{widget_key}",
         )
 
     st.markdown("### Fertilizer events")
@@ -264,7 +537,7 @@ with tab_management:
         fertilizer_df,
         num_rows="dynamic",
         use_container_width=True,
-        key=f"fertilizer_{scenario_name}_{treatment_key}",
+        key=f"fertilizer_{widget_key}",
     )
 
     st.markdown("### Irrigation events")
@@ -283,7 +556,7 @@ with tab_management:
         irrigation_df,
         num_rows="dynamic",
         use_container_width=True,
-        key=f"irrigation_{scenario_name}_{treatment_key}",
+        key=f"irrigation_{widget_key}",
     )
 
 
@@ -429,239 +702,29 @@ with tab_results:
             st.session_state["last_season_df"] = season_df
             st.session_state["last_init_n_debug"] = init_n_debug
 
+            st.session_state["last_irrigation_events"] = irrigation_events
+            st.session_state["last_crop_id"] = scenario_config["crop_id"]
+            st.session_state["last_treatment_key"] = treatment_key
+            st.session_state["last_run_label"] = f"{scenario_name} — {treatment_key}"
+
             st.success("ARVIOR run completed successfully.")
-
-            # -----------------------------
-            # Summary metrics
-            # -----------------------------
-            final_row = season_df.iloc[-1]
-
-            st.markdown("## Summary")
-
-            col1, col2, col3, col4, col5 = st.columns(5)
-
-            with col1:
-                if "Biomass_actual_cum" in season_df.columns:
-                    st.metric(
-                        "Final biomass",
-                        f"{float(final_row['Biomass_actual_cum']):.2f} t DM/ha",
-                    )
-
-            with col2:
-                if "Yield_dm" in season_df.columns:
-                    st.metric(
-                        "Yield DM",
-                        f"{float(final_row['Yield_dm']):.2f}",
-                    )
-
-            with col3:
-                if "Yield_fresh" in season_df.columns:
-                    st.metric(
-                        "Fresh yield",
-                        f"{float(final_row['Yield_fresh']):.2f}",
-                    )
-
-            with col4:
-                if "N_cum_actual" in season_df.columns:
-                    st.metric(
-                        "N uptake",
-                        f"{float(final_row['N_cum_actual']):.1f} kg N/ha",
-                    )
-
-            with col5:
-                total_irrigation = sum(e["mm"] for e in irrigation_events)
-                st.metric(
-                    "Total irrigation",
-                    f"{total_irrigation:.0f} mm",
-                )
-
-            col6, col7, col8, col9, col10 = st.columns(5)
-
-            with col6:
-                if "NO3_leached" in season_df.columns:
-                    st.metric(
-                        "Total NO₃ leached",
-                        f"{float(season_df['NO3_leached'].sum()):.1f} kg N/ha",
-                    )
-
-            with col7:
-                if "N_denitrified" in season_df.columns:
-                    st.metric(
-                        "Denitrified N",
-                        f"{float(season_df['N_denitrified'].sum()):.1f} kg N/ha",
-                    )
-
-            with col8:
-                if "NH3_volatilized" in season_df.columns:
-                    st.metric(
-                        "NH₃ volatilized",
-                        f"{float(season_df['NH3_volatilized'].sum()):.1f} kg N/ha",
-                    )
-
-            with col9:
-                if "ks" in season_df.columns:
-                    water_stress_days = int((season_df["ks"] < 0.99).sum())
-                    st.metric(
-                        "Water-stress days",
-                        f"{water_stress_days}",
-                    )
-
-            with col10:
-                if "N_stress_factor" in season_df.columns:
-                    n_stress_days = int((season_df["N_stress_factor"] < 0.99).sum())
-                    st.metric(
-                        "N-stress days",
-                        f"{n_stress_days}",
-                    )
-
-            # -----------------------------
-            # Results plots
-            # -----------------------------
-            st.markdown("## Model outputs")
-
-            results_tab1, results_tab2, results_tab3, results_tab4 = st.tabs(
-                [
-                    "Growth and yield",
-                    "Nitrogen",
-                    "Water balance",
-                    "Stress and DSS",
-                ]
-            )
-
-            with results_tab1:
-                plot_line(
-                    season_df,
-                    ["Biomass_actual_cum", "Biomass_pot_cum"],
-                    "Biomass development",
-                    "Biomass (t DM/ha)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["dBiomass_actual", "dBiomass_pot"],
-                    "Daily biomass growth",
-                    "Daily biomass growth (t DM/ha/day)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["Yield_dm", "Yield_dm_pot"],
-                    "Dry matter yield",
-                    "Yield DM",
-                )
-
-                plot_line(
-                    season_df,
-                    ["Yield_fresh", "Yield_fresh_pot"],
-                    "Fresh yield",
-                    "Fresh yield",
-                )
-
-            with results_tab2:
-                plot_line(
-                    season_df,
-                    ["N_cum_actual"],
-                    "Cumulative nitrogen uptake",
-                    "N uptake (kg N/ha)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["N_actual_daily", "N_potential_daily"],
-                    "Daily nitrogen uptake",
-                    "Daily N uptake/demand (kg N/ha/day)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["NO3_pool", "NH4_pool"],
-                    "Mineral nitrogen pools",
-                    "Mineral N pool (kg N/ha)",
-                )
-
-                plot_bar(
-                    season_df,
-                    ["N_fert_added_today"],
-                    "Fertilizer N additions",
-                    "N added (kg N/ha/day)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["NO3_leached", "N_denitrified", "NH3_volatilized"],
-                    "Daily nitrogen losses",
-                    "N loss (kg N/ha/day)",
-                )
-
-            with results_tab3:
-                plot_line(
-                    season_df,
-                    ["VWC"],
-                    "Volumetric water content",
-                    "VWC (%)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["wb_D_end_mm", "RAW", "TAW"],
-                    "Root-zone depletion, RAW and TAW",
-                    "Water depth (mm)",
-                )
-
-                plot_bar(
-                    season_df,
-                    ["P", "Irrigation"],
-                    "Rainfall and irrigation",
-                    "Water input (mm/day)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["ET0", "ETa"],
-                    "Reference and actual evapotranspiration",
-                    "ET (mm/day)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["DP", "Runoff"],
-                    "Drainage and runoff",
-                    "Water loss (mm/day)",
-                )
-
-            with results_tab4:
-                plot_line(
-                    season_df,
-                    ["ks", "N_stress_factor", "f_salinity"],
-                    "Stress factors",
-                    "Stress factor (1 = no stress)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["Irrig_rec_mm"],
-                    "DSS irrigation recommendation",
-                    "Recommended irrigation (mm)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["Fert_rec_kgN_ha"],
-                    "DSS fertilizer recommendation",
-                    "Recommended N (kg N/ha)",
-                )
-
-                plot_line(
-                    season_df,
-                    ["Leach_risk_index", "Drive_risk_index"],
-                    "Operational risk indices",
-                    "Risk index",
-                )
 
         except Exception as exc:
             st.error("The ARVIOR scenario run failed.")
             st.exception(exc)
 
+    if "last_season_df" in st.session_state:
+        st.caption(
+            f"Showing latest completed run: "
+            f"{st.session_state.get('last_run_label', '')}"
+        )
+
+        render_model_results(
+            season_df=st.session_state["last_season_df"],
+            irrigation_events=st.session_state.get("last_irrigation_events", []),
+            crop_id=st.session_state.get("last_crop_id", scenario_config["crop_id"]),
+            treatment_key=st.session_state.get("last_treatment_key", treatment_key),
+        )
     else:
         st.info("Choose a scenario and click 'Run ARVIOR' in the sidebar.")
 
