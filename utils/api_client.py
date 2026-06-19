@@ -7,9 +7,6 @@ API_BASE_URL = "https://arvior-api-b8g6h4awe2aea0b2.westeurope-01.azurewebsites.
 def check_api_health() -> tuple[bool, str]:
     """
     Check whether the deployed ARVIOR API is reachable.
-
-    Returns:
-        (success, message)
     """
     url = f"{API_BASE_URL}/docs"
 
@@ -23,3 +20,19 @@ def check_api_health() -> tuple[bool, str]:
 
     except requests.RequestException as exc:
         return False, f"Could not reach ARVIOR API: {exc}"
+
+
+def run_arvior(request_json: dict) -> dict:
+    """
+    Send an ARVIOR model request to the deployed API.
+    """
+    url = f"{API_BASE_URL}/run-arvior"
+
+    response = requests.post(
+        url,
+        json=request_json,
+        timeout=120,
+    )
+
+    response.raise_for_status()
+    return response.json()

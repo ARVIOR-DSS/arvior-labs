@@ -1,7 +1,9 @@
+import json
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils.api_client import check_api_health
+
+from utils.api_client import check_api_health, run_arvior
 
 
 st.set_page_config(
@@ -170,33 +172,59 @@ with tab_results:
     st.subheader("Results")
 
     if run_button:
-        st.success("Test run completed. In the next step, this button will call the ARVIOR API.")
+        st.info("Running ARVIOR model through the deployed API...")
 
-        # Temporary fake result data, only to test the interface and plotting.
-        demo_df = pd.DataFrame(
-            {
-                "date": pd.date_range("2011-04-01", periods=120, freq="D"),
-                "Biomass_actual_cum": [i * 0.08 for i in range(120)],
-                "Biomass_pot_cum": [i * 0.10 for i in range(120)],
-            }
-        )
+        try:
+            with open("data/sample_request.json", "r", encoding="utf-8") as f:
+                request_json = json.load(f)
 
-        fig = px.line(
-            demo_df,
-            x="date",
-            y=["Biomass_actual_cum", "Biomass_pot_cum"],
-            labels={
-                "value": "Biomass (t DM/ha)",
-                "date": "Date",
-                "variable": "Variable",
-            },
-            title="Biomass development",
-        )
+            response_json = run_arvior(request_json)
 
-        st.plotly_chart(fig, use_container_width=True)
+            if "df" not in response_json:
+                st.error("The API response did not contain a 'df' field.")
+                st.json(response_json)
+            else:
+                result_df = pd.DataFrame(response_json["df"])
 
-    else:
-        st.info("Choose a scenario and click 'Run ARVIOR' in the sidebar.")
+                if "Date" in result_df.columns:
+                    result_df["Date"] = pd.to_datetime(result_df["Date"])
+
+                st.success("ARVIOR run completed successfully.")
+
+                st.markdown("### Available output columns")
+                st.write(list(result_df.columns))
+
+                biomass_cols = [
+                    col for col in ["Biomass_actual_cum", "Biomass_pot_cum"]
+                    if col in result_df.columns
+                ]
+
+                if biomass_cols and "Date" in result_df.columns:
+                    fig = px.line(
+                        result_df,
+                        x="Date",
+                        y=biomass_cols,
+                        labels={
+                            "value": "Biomass",
+                            "Date": "Date",
+                            "variable": "Variable",
+                        },
+                        title="Biomass development from ARVIOR API",
+                    )
+
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning(
+                        "Could not find expected biomass columns. "
+                        "Check the output column list above."
+                    )
+
+                with st.expander("Raw API response"):
+                    st.json(response_json)
+
+        except Exception as exc:
+            st.error("The ARVIOR API run failed.")
+            st.exception(exc)
 
 
 with tab_debug:
