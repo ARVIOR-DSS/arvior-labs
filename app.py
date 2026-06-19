@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from utils.api_client import check_api_health
 
 
 st.set_page_config(
@@ -51,6 +52,15 @@ treatment = st.sidebar.selectbox(
 
 run_button = st.sidebar.button("Run ARVIOR", type="primary")
 
+st.sidebar.markdown("---")
+
+if st.sidebar.button("Check API connection"):
+    ok, message = check_api_health()
+
+    if ok:
+        st.sidebar.success(message)
+    else:
+        st.sidebar.error(message)
 
 # -----------------------------
 # Main tabs
