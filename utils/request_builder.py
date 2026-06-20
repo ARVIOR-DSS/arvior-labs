@@ -85,6 +85,7 @@ def build_run_request(
     irrigation_events: list[dict],
     prev_state: dict | None = None,
     site_overrides: dict | None = None,
+    crop_overrides: dict | None = None,
 ) -> dict:
     site = load_site_for_api(con, site_id=site_id, crop_id=crop_id)
 
@@ -105,7 +106,7 @@ def build_run_request(
         irrigation_events=irrigation_events,
     )
 
-    return {
+    request_json = {
         "weather": weather,
         "site": site,
         "management": management,
@@ -113,6 +114,15 @@ def build_run_request(
         "prev_state": prev_state,
         "dss_config": {},
     }
+
+    if crop_overrides:
+        request_json["crop_overrides"] = {
+            key: float(value)
+            for key, value in crop_overrides.items()
+            if value is not None
+        }
+
+    return request_json
 
 
 def build_scenario_inputs(con, scenario: dict, treatment_key: str) -> dict:

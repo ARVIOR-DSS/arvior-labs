@@ -598,34 +598,104 @@ with tab_management:
 with tab_advanced:
     st.subheader("Advanced crop parameters")
 
-    enable_advanced = st.checkbox("Enable crop parameter editing")
+    st.caption(
+        "Explore how crop parameters affect simulated growth, nitrogen uptake and stress. "
+        "Changes are temporary and only apply to the current model run."
+    )
+
+    enable_advanced = st.checkbox(
+        "Enable crop parameter editing",
+        key=f"enable_advanced_{widget_key}",
+    )
+
+    crop_overrides = None
 
     if enable_advanced:
-        st.warning(
-            "The UI can already collect these crop parameters, but the deployed API "
-            "must still support crop_overrides before they can affect the model run."
+        st.info(
+            "These values are sent to the ARVIOR API as crop_overrides. "
+            "They do not change the crop catalog permanently."
         )
 
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            tbase = st.number_input("Tbase", value=4.0)
-            tsum = st.number_input("Tsum", value=1300.0)
+            tbase = st.number_input(
+                "Tbase",
+                value=4.0,
+                help="Base temperature for thermal time accumulation. Below this temperature, crop development is limited.",
+                key=f"tbase_{widget_key}",
+            )
+
+            tsum = st.number_input(
+                "Tsum",
+                value=1300.0,
+                help="Thermal time requirement for crop development. Higher values generally delay maturity.",
+                key=f"tsum_{widget_key}",
+            )
 
         with col2:
-            i50a = st.number_input("I50a", value=300.0)
-            i50b = st.number_input("I50b", value=500.0)
+            i50a = st.number_input(
+                "I50a",
+                value=300.0,
+                help="Controls the first half of the crop growth curve. Lower values shift early growth forward.",
+                key=f"i50a_{widget_key}",
+            )
+
+            i50b = st.number_input(
+                "I50b",
+                value=500.0,
+                help="Controls the later part of the crop growth curve and canopy development.",
+                key=f"i50b_{widget_key}",
+            )
 
         with col3:
-            rue = st.number_input("RUE", value=1.6)
-            n_uptake_a = st.number_input("N_uptake_a", value=61.0)
+            rue = st.number_input(
+                "RUE",
+                value=1.6,
+                help="Radiation use efficiency. Higher values increase potential biomass production per unit intercepted radiation.",
+                key=f"rue_{widget_key}",
+            )
+
+            n_uptake_a = st.number_input(
+                "N_uptake_a",
+                value=61.0,
+                help="Nitrogen dilution parameter controlling the crop nitrogen demand level.",
+                key=f"n_uptake_a_{widget_key}",
+            )
 
         with col4:
-            n_uptake_b = st.number_input("N_uptake_b", value=0.44)
-            n_dilution_fmin = st.number_input("N_dilution_fmin", value=0.35)
+            n_uptake_b = st.number_input(
+                "N_uptake_b",
+                value=0.44,
+                help="Nitrogen dilution parameter controlling how crop N concentration declines with biomass.",
+                key=f"n_uptake_b_{widget_key}",
+            )
+
+            n_dilution_fmin = st.number_input(
+                "N_dilution_fmin",
+                value=0.35,
+                help="Minimum nitrogen dilution fraction under strong nitrogen limitation.",
+                key=f"n_dilution_fmin_{widget_key}",
+            )
+
+        crop_overrides = {
+            "Tbase": float(tbase),
+            "Tsum": float(tsum),
+            "I50a": float(i50a),
+            "I50b": float(i50b),
+            "RUE": float(rue),
+            "N_uptake_a": float(n_uptake_a),
+            "N_uptake_b": float(n_uptake_b),
+            "N_dilution_fmin": float(n_dilution_fmin),
+        }
+
+        with st.expander("Crop parameters sent to the API"):
+            st.json(crop_overrides)
 
     else:
-        st.info("Advanced crop parameters are hidden. The model uses default crop catalog values.")
+        st.info(
+            "Crop parameter editing is disabled. The model uses the default crop catalog values."
+        )
 
 
 with tab_results:
@@ -703,6 +773,7 @@ with tab_results:
                     irrigation_events=irrigation_events,
                     prev_state=None,
                     site_overrides=site_overrides,
+                    crop_overrides=crop_overrides,
                 )
 
                 warmup_response = run_arvior(warmup_request)
@@ -736,6 +807,7 @@ with tab_results:
                 irrigation_events=irrigation_events,
                 prev_state=season_prev_state,
                 site_overrides=site_overrides,
+                crop_overrides=crop_overrides,
             )
 
             season_response = run_arvior(season_request)
@@ -752,6 +824,7 @@ with tab_results:
             st.session_state["last_season_response"] = season_response
             st.session_state["last_season_df"] = season_df
             st.session_state["last_init_n_debug"] = init_n_debug
+            st.session_state["last_crop_overrides"] = crop_overrides
 
             st.session_state["last_irrigation_events"] = irrigation_events
             st.session_state["last_crop_id"] = scenario_config["crop_id"]
@@ -789,6 +862,8 @@ with tab_debug:
     st.write("Treatment config:", treatment_config)
     st.markdown("### Site overrides")
     st.json(site_overrides)
+    st.markdown("### Crop overrides")
+    st.json(crop_overrides)
 
     st.markdown("### Edited fertilizer table")
     st.dataframe(edited_fertilizer_df, use_container_width=True)
