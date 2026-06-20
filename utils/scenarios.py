@@ -65,4 +65,48 @@ SCENARIOS = {
             },
         },
     },
+        "Maize — Gatton 1999": {
+        "description": "Maize validation trial from Massignam et al. 2009, Experiment 1, Gatton, Australia.",
+        "crop_id": "maize",
+        "site_id": 6,
+        "run_mode": "warmup_then_season",
+        "warmup_days": 30,
+        "initial_mineral_n_kg_ha": 31.0,
+        "initial_no3_fraction": 0.90,
+        "treatments": {
+            "LowN": {
+                "trial_id": 14,
+                "label": "Low N",
+                "default_irrigation": [
+                    {"date": "1999-03-30", "mm": 30.0},
+                    {"date": "1999-04-16", "mm": 30.0},
+                    {"date": "1999-04-27", "mm": 30.0},
+                    {"date": "1999-05-07", "mm": 30.0},
+                    {"date": "1999-06-01", "mm": 30.0},
+                ],
+            },
+            "MediumN": {
+                "trial_id": 15,
+                "label": "Medium N",
+                "default_irrigation": [
+                    {"date": "1999-03-30", "mm": 30.0},
+                    {"date": "1999-04-16", "mm": 30.0},
+                    {"date": "1999-04-27", "mm": 30.0},
+                    {"date": "1999-05-07", "mm": 30.0},
+                    {"date": "1999-06-01", "mm": 30.0},
+                ],
+            },
+            "HighN": {
+                "trial_id": 16,
+                "label": "High N",
+                "default_irrigation": [
+                    {"date": "1999-03-30", "mm": 30.0},
+                    {"date": "1999-04-16", "mm": 30.0},
+                    {"date": "1999-04-27", "mm": 30.0},
+                    {"date": "1999-05-07", "mm": 30.0},
+                    {"date": "1999-06-01", "mm": 30.0},
+                ],
+            },
+        },
+    },
 }
