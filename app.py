@@ -2,6 +2,7 @@ import json
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from utils.api_client import check_api_health, run_arvior
@@ -67,6 +68,69 @@ def plot_bar(df: pd.DataFrame, y_cols: list[str], title: str, y_label: str):
     )
     st.plotly_chart(fig, use_container_width=True)
 
+
+def make_run_label(run_number: int, crop_overrides: dict | None) -> str:
+    """Create a readable label for the comparison plot."""
+
+    if not crop_overrides:
+        return f"Run {run_number}: default crop"
+
+    label_parts = []
+
+    for key in ["RUE", "Tsum", "Tbase", "N_uptake_a", "N_uptake_b"]:
+        if key in crop_overrides:
+            label_parts.append(f"{key}={float(crop_overrides[key]):g}")
+
+        if len(label_parts) >= 2:
+            break
+
+    if not label_parts:
+        return f"Run {run_number}: edited crop"
+
+    return f"Run {run_number}: " + ", ".join(label_parts)
+
+
+def plot_run_history_line(
+    run_history: list[dict],
+    y_col: str,
+    title: str,
+    y_label: str,
+    max_runs: int = 2,
+):
+    """Plot the same output variable for the latest model runs."""
+
+    if not run_history:
+        return
+
+    visible_runs = run_history[-max_runs:]
+
+    fig = go.Figure()
+
+    for run in visible_runs:
+        df = run["season_df"]
+
+        if y_col not in df.columns or "DAS" not in df.columns:
+            continue
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["DAS"],
+                y=df[y_col],
+                mode="lines",
+                name=run["label"],
+            )
+        )
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Days after sowing",
+        yaxis_title=y_label,
+        legend_title="Model run",
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def safe_float(value):
     """Convert value to float if possible, otherwise return None."""
     if value is None or pd.isna(value):
@@ -92,6 +156,7 @@ def render_model_results(
     irrigation_events: list[dict],
     crop_id: str,
     treatment_key: str,
+    run_history: list[dict] | None = None,
 ):
     """Render summary metrics, graphs and CSV download for the latest model run."""
 
@@ -188,11 +253,27 @@ def render_model_results(
             "Growth and yield",
             "Nitrogen",
             "Water balance",
-            "Stress and DSS",
+            "Stress factors",
         ]
     )
 
     with results_tab1:
+        if run_history and len(run_history) > 1:
+            st.markdown("### Run comparison")
+
+            plot_run_history_line(
+                run_history,
+                y_col="Biomass_actual_cum",
+                title="Actual biomass comparison",
+                y_label="Biomass (t DM/ha)",
+                max_runs=2,
+            )
+
+            st.caption(
+                "Comparison shows actual biomass only for the latest two runs. "
+                "The detailed plots below show the latest run."
+            )
+
         plot_line(
             season_df,
             ["Biomass_actual_cum", "Biomass_pot_cum"],
@@ -222,6 +303,21 @@ def render_model_results(
         )
 
     with results_tab2:
+        if run_history and len(run_history) > 1:
+            st.markdown("### Run comparison")
+
+            plot_run_history_line(
+                run_history,
+                y_col="N_cum_actual",
+                title="Actual nitrogen uptake comparison",
+                y_label="N uptake (kg N/ha)",
+                max_runs=2,
+            )
+
+            st.caption(
+                "Comparison shows cumulative actual N uptake only for the latest two runs."
+            )
+
         plot_line(
             season_df,
             ["N_cum_actual"],
@@ -294,32 +390,59 @@ def render_model_results(
         )
 
     with results_tab4:
+        if run_history and len(run_history) > 1:
+            st.markdown("### Run comparison")
+
+            plot_run_history_line(
+                run_history,
+                y_col="ks",
+                title="Water stress comparison",
+                y_label="Water stress factor, ks (1 = no stress)",
+                max_runs=2,
+            )
+
+            plot_run_history_line(
+                run_history,
+                y_col="N_stress_factor",
+                title="Nitrogen stress comparison",
+                y_label="N stress factor (1 = no stress)",
+                max_runs=2,
+            )
+
+            plot_run_history_line(
+                run_history,
+                y_col="f_salinity",
+                title="Salinity stress comparison",
+                y_label="Salinity stress factor (1 = no stress)",
+                max_runs=2,
+            )
+
+            st.caption(
+                "Comparison shows each stress factor separately for the latest two runs. "
+                "The detailed plots below show the latest run."
+            )
+
+        st.markdown("### Latest run")
+
         plot_line(
             season_df,
-            ["ks", "N_stress_factor", "f_salinity"],
-            "Stress factors",
-            "Stress factor (1 = no stress)",
+            ["ks"],
+            "Water stress",
+            "Water stress factor, ks (1 = no stress)",
         )
 
         plot_line(
             season_df,
-            ["Irrig_rec_mm"],
-            "DSS irrigation recommendation",
-            "Recommended irrigation (mm)",
+            ["N_stress_factor"],
+            "Nitrogen stress",
+            "N stress factor (1 = no stress)",
         )
 
         plot_line(
             season_df,
-            ["Fert_rec_kgN_ha"],
-            "DSS fertilizer recommendation",
-            "Recommended N (kg N/ha)",
-        )
-
-        plot_line(
-            season_df,
-            ["Leach_risk_index", "Drive_risk_index"],
-            "Operational risk indices",
-            "Risk index",
+            ["f_salinity"],
+            "Salinity stress",
+            "Salinity stress factor (1 = no stress)",
         )
 
     with st.expander("Available output columns"):
@@ -826,6 +949,30 @@ with tab_results:
             st.session_state["last_init_n_debug"] = init_n_debug
             st.session_state["last_crop_overrides"] = crop_overrides
 
+            st.session_state["last_run_counter"] = (
+                st.session_state.get("last_run_counter", 0) + 1
+            )
+
+            run_label = make_run_label(
+                run_number=st.session_state["last_run_counter"],
+                crop_overrides=crop_overrides,
+            )
+
+            run_history = st.session_state.get("last_run_history", [])
+
+            run_history.append(
+                {
+                    "label": run_label,
+                    "scenario": scenario_name,
+                    "treatment": treatment_key,
+                    "crop_overrides": crop_overrides,
+                    "season_df": season_df.copy(),
+                }
+            )
+
+            # Keep only the latest two runs to avoid crowded graphs.
+            st.session_state["last_run_history"] = run_history[-2:]
+
             st.session_state["last_irrigation_events"] = irrigation_events
             st.session_state["last_crop_id"] = scenario_config["crop_id"]
             st.session_state["last_treatment_key"] = treatment_key
@@ -848,6 +995,7 @@ with tab_results:
             irrigation_events=st.session_state.get("last_irrigation_events", []),
             crop_id=st.session_state.get("last_crop_id", scenario_config["crop_id"]),
             treatment_key=st.session_state.get("last_treatment_key", treatment_key),
+            run_history=st.session_state.get("last_run_history", []),
         )
     else:
         st.info("Choose a scenario and click 'Run ARVIOR' in the sidebar.")
@@ -874,6 +1022,25 @@ with tab_debug:
     if "last_init_n_debug" in st.session_state:
         with st.expander("Initial N injection debug"):
             st.json(st.session_state["last_init_n_debug"])
+
+    if "last_crop_overrides" in st.session_state:
+        with st.expander("Last crop overrides sent to API"):
+            st.json(st.session_state["last_crop_overrides"])
+
+    if "last_run_history" in st.session_state:
+        with st.expander("Run comparison history"):
+            st.json(
+                [
+                    {
+                        "label": run["label"],
+                        "scenario": run["scenario"],
+                        "treatment": run["treatment"],
+                        "crop_overrides": run["crop_overrides"],
+                        "n_rows": len(run["season_df"]),
+                    }
+                    for run in st.session_state["last_run_history"]
+                ]
+            )
 
     if "last_warmup_request" in st.session_state:
         with st.expander("Last warm-up request"):
